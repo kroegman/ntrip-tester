@@ -5,12 +5,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { EventEmitter } from 'node:events';
+import { RtcmStreamParser, haversineMeters } from './rtcm.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(ROOT, 'public');
 const PORT = Number(process.env.PORT || 8080);
-const MAX_CONNECTIONS = Math.max(1, Number(process.env.MAX_CONNECTIONS || 500));
+const MAX_CONNECTIONS = Math.max(1, Number(process.env.MAX_CONNECTIONS || 1000));
 const START_RATE = Math.max(1, Number(process.env.START_RATE_PER_SECOND || 20));
+const MAX_CHURN_PER_TICK = Math.max(1, Number(process.env.MAX_CHURN_PER_TICK || 50));
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || '';
 
 export function nmeaCoordinate(value, positive, negative, latitude = true) {
@@ -38,7 +40,7 @@ export function makeGga(latitude, longitude) {
   return `$${body}*${checksum(body)}\r\n`;
 }
 
-class LoadTest extends EventEmitter {
+export class LoadTest extends EventEmitter {
   constructor() {
     super();
     this.clients = new Map();
@@ -48,20 +50,31 @@ class LoadTest extends EventEmitter {
     this.totals = { bytes: 0, errors: 0, reconnects: 0 };
     this.samples = [];
     this.lastBytes = 0;
+    this.churnTimer = null;
     this.tick = setInterval(() => this.sample(), 1000);
+    this.tick.unref();
   }
 
   publicStatus() {
     const streams = [...this.clients.values()].map(c => ({
       id: c.id, state: c.state, bytes: c.bytes, rate: c.rate, connectedAt: c.connectedAt,
-      latency: c.latency, error: c.error || '', reconnects: c.reconnects, account: c.account.label || c.account.username
+      latency: c.latency, error: c.error || '', reconnects: c.reconnects, account: c.account.label || c.account.username,
+      rover: { latitude: c.account.latitude ?? this.config?.latitude, longitude: c.account.longitude ?? this.config?.longitude },
+      baseStation: c.rtcm?.baseStation ? {
+        messageType: c.rtcm.baseStation.messageType, stationId: c.rtcm.baseStation.stationId,
+        latitude: c.rtcm.baseStation.latitude, longitude: c.rtcm.baseStation.longitude,
+        receivedAt: c.rtcm.baseStation.receivedAt
+      } : null, rtcmFrames: c.rtcm?.frames || 0, rtcmTypes: c.rtcm?.counts.size || 0,
+      churnEvents: c.churnEvents
     }));
     const publicConfig = this.config ? {
       host: this.config.host, port: this.config.port, mountpoint: this.config.mountpoint,
       connections: this.config.connections, accountMode: this.config.accountMode,
       latitude: this.config.latitude, longitude: this.config.longitude,
       tls: this.config.tls, sendGga: this.config.sendGga, ggaInterval: this.config.ggaInterval,
-      autoReconnect: this.config.autoReconnect
+      autoReconnect: this.config.autoReconnect, parseRtcm: this.config.parseRtcm,
+      randomChurn: this.config.randomChurn, churnInterval: this.config.churnInterval,
+      churnPercent: this.config.churnPercent, churnDowntime: this.config.churnDowntime
     } : null;
     return {
       running: this.running, startedAt: this.startedAt,
@@ -69,7 +82,7 @@ class LoadTest extends EventEmitter {
       summary: {
         requested: this.config?.connections || 0,
         active: streams.filter(s => s.state === 'streaming').length,
-        connecting: streams.filter(s => ['queued', 'connecting'].includes(s.state)).length,
+        connecting: streams.filter(s => ['queued', 'connecting', 'churn-paused'].includes(s.state)).length,
         failed: streams.filter(s => s.state === 'error').length,
         bytes: this.totals.bytes,
         rate: streams.reduce((n, s) => n + s.rate, 0),
@@ -105,15 +118,36 @@ class LoadTest extends EventEmitter {
     this.lastBytes = 0;
     for (let i = 1; i <= config.connections; i++) {
       const account = config.accounts?.[i - 1] || { username: config.username, password: config.password, label: config.username };
-      const client = { id: i, account, state: 'queued', bytes: 0, lastBytes: 0, rate: 0, connectedAt: null, latency: null, error: '', reconnects: 0, socket: null, ggaTimer: null, retryTimer: null };
+      const client = { id: i, account, state: 'queued', bytes: 0, lastBytes: 0, rate: 0, connectedAt: null, latency: null, error: '', reconnects: 0, churnEvents: 0, chaosPaused: false, socket: null, ggaTimer: null, retryTimer: null, chaosResumeTimer: null, rtcm: config.parseRtcm ? new RtcmStreamParser() : null };
       this.clients.set(i, client);
       setTimeout(() => this.connect(client), Math.floor((i - 1) / START_RATE) * 1000 + ((i - 1) % START_RATE) * (1000 / START_RATE));
+    }
+    if (config.randomChurn) this.churnTimer = setInterval(() => this.churn(), config.churnInterval * 1000);
+    this.broadcast();
+  }
+
+  churn() {
+    if (!this.running || !this.config.randomChurn) return;
+    const candidates = [...this.clients.values()].filter(client => client.state === 'streaming' && !client.chaosPaused);
+    const requested = Math.max(1, Math.ceil(this.config.connections * this.config.churnPercent / 100));
+    const count = Math.min(requested, MAX_CHURN_PER_TICK, candidates.length);
+    for (let i = 0; i < count; i++) {
+      const pick = i + Math.floor(Math.random() * (candidates.length - i));
+      [candidates[i], candidates[pick]] = [candidates[pick], candidates[i]];
+      const client = candidates[i];
+      client.chaosPaused = true; client.state = 'churn-paused'; client.error = ''; client.churnEvents++;
+      clearInterval(client.ggaTimer); client.ggaTimer = null; client.socket?.destroy();
+      client.chaosResumeTimer = setTimeout(() => {
+        client.chaosResumeTimer = null;
+        if (!this.running) return;
+        client.chaosPaused = false; this.connect(client);
+      }, this.config.churnDowntime * 1000 + i * Math.floor(1000 / START_RATE));
     }
     this.broadcast();
   }
 
   connect(client) {
-    if (!this.running) return;
+    if (!this.running || client.chaosPaused) return;
     client.state = 'connecting'; client.error = '';
     const cfg = this.config;
     const started = Date.now();
@@ -154,6 +188,7 @@ class LoadTest extends EventEmitter {
         headersDone = true; client.state = 'streaming'; client.connectedAt = Date.now();
         const body = headerBuffer.subarray(headerEnd);
         client.bytes += body.length; this.totals.bytes += body.length;
+        client.rtcm?.push(body);
         if (cfg.sendGga) {
           const latitude = client.account.latitude ?? cfg.latitude;
           const longitude = client.account.longitude ?? cfg.longitude;
@@ -163,27 +198,41 @@ class LoadTest extends EventEmitter {
         return this.broadcast();
       }
       client.bytes += chunk.length; this.totals.bytes += chunk.length;
+      client.rtcm?.push(chunk);
     });
     socket.on('timeout', () => closeWithError('Connection timed out'));
     socket.on('error', err => { if (client.state !== 'error') closeWithError(err.message); });
     socket.on('close', () => {
       clearInterval(client.ggaTimer); client.ggaTimer = null;
-      if (this.running && client.state === 'streaming') { client.state = 'error'; client.error = 'Stream closed'; this.totals.errors++; this.scheduleReconnect(client); }
+      if (this.running && client.state === 'streaming' && !client.chaosPaused) { client.state = 'error'; client.error = 'Stream closed'; this.totals.errors++; this.scheduleReconnect(client); }
     });
   }
 
   scheduleReconnect(client) {
-    if (!this.running || !this.config.autoReconnect || client.retryTimer) return;
+    if (!this.running || !this.config.autoReconnect || client.retryTimer || client.chaosPaused) return;
     client.reconnects++; this.totals.reconnects++;
     client.retryTimer = setTimeout(() => { client.retryTimer = null; this.connect(client); }, this.config.reconnectDelay * 1000);
   }
 
   stop() {
     this.running = false;
+    clearInterval(this.churnTimer); this.churnTimer = null;
     for (const client of this.clients.values()) {
-      clearInterval(client.ggaTimer); clearTimeout(client.retryTimer); client.socket?.destroy();
+      clearInterval(client.ggaTimer); clearTimeout(client.retryTimer); clearTimeout(client.chaosResumeTimer); client.socket?.destroy();
     }
     this.clients.clear(); this.config = null; this.startedAt = null; this.broadcast();
+  }
+
+  rtcmDetails(id) {
+    const client = this.clients.get(Number(id));
+    if (!client) return null;
+    const rover = { latitude: client.account.latitude ?? this.config.latitude, longitude: client.account.longitude ?? this.config.longitude };
+    const details = client.rtcm?.details() || { frames: 0, crcErrors: 0, lastMessageAt: null, baseStation: null, messages: [] };
+    return {
+      id: client.id, account: client.account.label || client.account.username, rover,
+      enabled: Boolean(client.rtcm), distanceMeters: details.baseStation ? haversineMeters(rover, details.baseStation) : null,
+      ...details
+    };
   }
 }
 
@@ -206,7 +255,9 @@ function validate(input) {
     username: String(input.username || ''), password: String(input.password || ''), connections: Number(input.connections || 1),
     latitude: Number(input.latitude), longitude: Number(input.longitude), tls: Boolean(input.tls), verifyTls: input.verifyTls !== false,
     sendGga: input.sendGga !== false, ggaInterval: Number(input.ggaInterval || 10), connectTimeout: Number(input.connectTimeout || 10),
-    autoReconnect: input.autoReconnect !== false, reconnectDelay: Number(input.reconnectDelay || 5)
+    autoReconnect: input.autoReconnect !== false, reconnectDelay: Number(input.reconnectDelay || 5),
+    parseRtcm: Boolean(input.parseRtcm), randomChurn: Boolean(input.randomChurn),
+    churnInterval: Number(input.churnInterval || 15), churnPercent: Number(input.churnPercent || 5), churnDowntime: Number(input.churnDowntime || 3)
   };
   if (!cfg.host || !cfg.mountpoint) throw new Error('Host and mountpoint are required');
   if (rawAccounts.length) {
@@ -232,6 +283,9 @@ function validate(input) {
   if (!Number.isFinite(cfg.latitude) || cfg.latitude < -90 || cfg.latitude > 90) throw new Error('Latitude must be between -90 and 90');
   if (!Number.isFinite(cfg.longitude) || cfg.longitude < -180 || cfg.longitude > 180) throw new Error('Longitude must be between -180 and 180');
   if (cfg.ggaInterval < 1 || cfg.ggaInterval > 3600) throw new Error('GGA interval must be 1–3600 seconds');
+  if (cfg.churnInterval < 2 || cfg.churnInterval > 3600) throw new Error('Churn interval must be 2–3600 seconds');
+  if (cfg.churnPercent < 1 || cfg.churnPercent > 100) throw new Error('Churn percentage must be 1–100');
+  if (cfg.churnDowntime < 1 || cfg.churnDowntime > 300) throw new Error('Churn downtime must be 1–300 seconds');
   return cfg;
 }
 
@@ -240,7 +294,9 @@ const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
     if (url.pathname.startsWith('/api/') && !authorized(req)) return json(res, 401, { error: 'Unauthorized' });
-    if (req.method === 'GET' && url.pathname === '/api/status') return json(res, 200, { ...loadTest.publicStatus(), limits: { maxConnections: MAX_CONNECTIONS, startRate: START_RATE } });
+    if (req.method === 'GET' && url.pathname === '/api/status') return json(res, 200, { ...loadTest.publicStatus(), limits: { maxConnections: MAX_CONNECTIONS, startRate: START_RATE, maxChurnPerTick: MAX_CHURN_PER_TICK } });
+    const rtcmMatch = url.pathname.match(/^\/api\/streams\/(\d+)\/rtcm$/);
+    if (req.method === 'GET' && rtcmMatch) { const details = loadTest.rtcmDetails(rtcmMatch[1]); return details ? json(res, 200, details) : json(res, 404, { error: 'Stream not found' }); }
     if (req.method === 'POST' && url.pathname === '/api/test/start') { const cfg = validate(await readJson(req)); loadTest.start(cfg); return json(res, 202, { ok: true }); }
     if (req.method === 'POST' && url.pathname === '/api/test/stop') { loadTest.stop(); return json(res, 200, { ok: true }); }
     if (req.method === 'GET' && url.pathname === '/api/events') {
@@ -251,7 +307,7 @@ const server = http.createServer(async (req, res) => {
     const requestPath = url.pathname === '/' ? '/index.html' : url.pathname;
     const file = path.join(PUBLIC, path.normalize(requestPath).replace(/^(\.\.(\/|\\|$))+/, ''));
     if (!file.startsWith(PUBLIC) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) return json(res, 404, { error: 'Not found' });
-    res.writeHead(200, { 'Content-Type': types[path.extname(file)] || 'application/octet-stream' }); fs.createReadStream(file).pipe(res);
+    res.writeHead(200, { 'Content-Type': types[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache' }); fs.createReadStream(file).pipe(res);
   } catch (err) { json(res, 400, { error: err.message || 'Bad request' }); }
 });
 

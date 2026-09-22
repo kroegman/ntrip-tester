@@ -14,6 +14,10 @@ Use it only against NTRIP casters you own or have explicit permission to load-te
 - Searchable connection table and CSV export
 - Credentials are kept only in server memory and are never returned by the API
 - Single-account mode or CSV account mode with one independent credential per client
+- Optional streaming RTCM3 frame parser with CRC-24Q validation and per-message counters
+- RTCM 1005/1006 base-station position decoding, ECEF-to-WGS84 conversion, live rover/base map, and baseline distance
+- On-demand per-connection RTCM inspector, keeping 500+ connection monitoring payloads compact
+- Optional bounded random disconnect/reconnect churn for authorized stress tests
 - No database and no runtime npm dependencies
 
 ## CSV account mode
@@ -27,6 +31,16 @@ Rover 02,user02,secret02,,
 ```
 
 `username` and `password` are required columns. `label`, `latitude`, and `longitude` are optional. Each row creates one NTRIP client. When row coordinates are blank, the dashboard's global coordinates are used. CSV contents are sent only to the running service, held in memory for the test, and never returned by the status API.
+
+## RTCM diagnostics
+
+Enable **RTCM diagnostics** before starting a test. The service incrementally validates RTCM3 frames, counts every message type, and decodes types 1005 and 1006 to obtain the base-station ECEF coordinates. Select a connection row or its rover marker to inspect that connection. Only the selected connection's complete message counters are fetched by the browser; the one-second overview remains compact for large tests.
+
+The map uses Leaflet with OpenStreetMap tiles and therefore needs browser internet access. Frame parsing continues if tiles are unavailable. Parsing is off by default so a throughput-only load test does not pay the CRC and bit-decoding cost.
+
+## Random churn
+
+Enable **Random connection churn** to periodically choose a random percentage of active clients, close them intentionally, and reconnect them after the configured downtime. Intentional churn is tracked separately from failures. `MAX_CHURN_PER_TICK` caps the number affected in one cycle (default `50`) so large tests do not accidentally create an unbounded reconnect burst.
 
 ## Run locally
 
@@ -54,7 +68,7 @@ docker compose up -d --build
 docker compose logs -f
 ```
 
-The compose file binds the app only to localhost. Put Caddy or Nginx in front of it for HTTPS and authentication. `Caddyfile.example` shows the smallest Caddy setup. Generate the password hash with `caddy hash-password`, replace the placeholder, point DNS at the droplet, and reload Caddy.
+The compose file publishes port `8080` on the droplet. Open `http://YOUR_DROPLET_IP:8080` only from networks allowed by your firewall. This plain HTTP endpoint has no built-in browser login and carries entered NTRIP credentials, so use a restricted firewall rule or put Caddy/Nginx with HTTPS and authentication in front of it. `Caddyfile.example` shows the reverse-proxy shape.
 
 ## GitHub deployment
 
@@ -74,7 +88,7 @@ Add these GitHub Actions repository secrets:
 
 On the droplet, create `/opt/ntrip-load-console/.env` once. The workflow deliberately excludes `.env`, so later deployments do not overwrite secrets or limits. If it is missing, the first deployment creates it from `.env.example`.
 
-For 500+ clients, increase the container `nofile` limit and the host's file-descriptor limits, raise `MAX_CONNECTIONS` gradually, and watch CPU, memory, bandwidth, and the caster's published session limits.
+For 500+ clients, raise `MAX_CONNECTIONS`, increase the container and host file-descriptor limits, and watch CPU, memory, bandwidth, reconnect rate, and the caster's published session limits. Start with RTCM diagnostics and churn disabled, establish a throughput baseline, and enable them independently.
 
 ## Notes
 

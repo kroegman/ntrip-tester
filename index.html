@@ -7,6 +7,8 @@
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b1020'/%3E%3Cpath d='M16 42a23 23 0 0 1 32 0M22 34a14 14 0 0 1 20 0M29 27a5 5 0 0 1 6 0' fill='none' stroke='%236ee7b7' stroke-width='5' stroke-linecap='round'/%3E%3Ccircle cx='32' cy='48' r='4' fill='%236ee7b7'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="/csv.css">
+  <link rel="stylesheet" href="/diagnostics.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
 </head>
 <body>
   <header class="topbar">
@@ -51,6 +53,21 @@
           <label class="check"><input name="autoReconnect" type="checkbox" checked><span></span>Auto reconnect</label>
           <label class="compact">GGA EVERY <input name="ggaInterval" type="number" value="10" min="1"> SEC</label>
         </div>
+        <div class="feature-grid">
+          <div class="feature-card">
+            <label class="check"><input name="parseRtcm" type="checkbox"><span></span>RTCM diagnostics</label>
+            <p>Parse frames, decode 1005/1006 base positions, and count all message types.</p>
+          </div>
+          <div class="feature-card">
+            <label class="check"><input name="randomChurn" type="checkbox"><span></span>Random connection churn</label>
+            <p>Randomly disconnect and resume a bounded group of active clients.</p>
+          </div>
+        </div>
+        <div id="churnSettings" class="field-grid triple advanced-settings" hidden>
+          <label>EVERY (SECONDS)<input name="churnInterval" type="number" value="15" min="2" max="3600"></label>
+          <label>CLIENTS PER CYCLE (%)<input name="churnPercent" type="number" value="5" min="1" max="100"></label>
+          <label>OFFLINE FOR (SECONDS)<input name="churnDowntime" type="number" value="3" min="1" max="300"></label>
+        </div>
         <div id="message" class="message" role="alert"></div>
         <div class="actions"><button id="startBtn" class="primary" type="submit">Start test <span>↗</span></button><button id="stopBtn" class="secondary" type="button" disabled>Stop</button></div>
       </form>
@@ -67,11 +84,27 @@
         <div class="chart-wrap"><div class="chart-label"><span>LAST 60 SECONDS</span><span id="chartPeak">0 B/s peak</span></div><svg id="chart" viewBox="0 0 600 130" preserveAspectRatio="none" aria-label="Throughput chart"><path class="chart-area" d=""></path><path class="chart-line" d=""></path></svg></div>
       </aside>
     </section>
+    <section class="panel diagnostics-panel">
+      <div class="panel-head"><div><p class="section-no">03</p><h2>RTCM spatial diagnostics</h2></div><div class="diag-selection"><span>SELECTED</span><strong id="selectedStream">No connection</strong></div></div>
+      <div class="diagnostics-grid">
+        <div class="map-shell">
+          <div id="map" aria-label="Base station and rover map"></div>
+          <div id="mapEmpty" class="map-empty">Enable RTCM diagnostics and select a connection.</div>
+          <div class="distance-card"><span>BASELINE</span><strong id="baselineDistance">—</strong></div>
+        </div>
+        <aside class="message-inspector">
+          <div class="inspector-head"><div><span>MESSAGE STREAM</span><strong id="messageSummary">No stream selected</strong></div><span id="crcSummary">0 CRC errors</span></div>
+          <div id="stationDetails" class="station-details"><span>Waiting for RTCM 1005 or 1006.</span></div>
+          <div id="messageTypes" class="message-types"><p>Select a rover marker or a row in the connection table to inspect its RTCM messages.</p></div>
+        </aside>
+      </div>
+    </section>
     <section class="panel streams-panel">
-      <div class="panel-head"><div><p class="section-no">03</p><h2>Connection detail</h2></div><div class="table-tools"><input id="streamSearch" placeholder="Filter by ID or status"><button id="downloadCsv" class="text-btn">Export CSV</button></div></div>
-      <div class="table-wrap"><table><thead><tr><th>CLIENT</th><th>ACCOUNT</th><th>STATUS</th><th>LATENCY</th><th>RATE</th><th>RECEIVED</th><th>RECONNECTS</th><th>LAST MESSAGE</th></tr></thead><tbody id="streamRows"><tr><td colspan="8" class="empty">Start a test to see individual stream activity.</td></tr></tbody></table></div>
+      <div class="panel-head"><div><p class="section-no">04</p><h2>Connection detail</h2></div><div class="table-tools"><input id="streamSearch" placeholder="Filter by ID, account, or status"><button id="downloadCsv" class="text-btn">Export CSV</button></div></div>
+      <div class="table-wrap"><table><thead><tr><th>CLIENT</th><th>ACCOUNT</th><th>STATUS</th><th>LATENCY</th><th>RATE</th><th>RTCM</th><th>RECEIVED</th><th>RECONNECTS</th><th>CHURN</th><th>LAST MESSAGE</th></tr></thead><tbody id="streamRows"><tr><td colspan="10" class="empty">Start a test to see individual stream activity.</td></tr></tbody></table></div>
     </section>
   </main>
-  <footer><span>NTRIP LOAD CONSOLE / v1.1</span><span>Run only against casters you are authorized to test.</span></footer>
+  <footer><span>NTRIP LOAD CONSOLE / v1.2</span><span>Run only against casters you are authorized to test.</span></footer>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script type="module" src="/app.js"></script>
 </body></html>
