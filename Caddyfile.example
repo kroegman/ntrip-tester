@@ -1,0 +1,6 @@
+ntrip.example.com {
+  basicauth {
+    admin $2a$14$REPLACE_WITH_CADDY_HASH
+  }
+  reverse_proxy 127.0.0.1:8080
+}

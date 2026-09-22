@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Configure and monitor concurrent NTRIP stream tests.">
+  <title>NTRIP Load Console</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b1020'/%3E%3Cpath d='M16 42a23 23 0 0 1 32 0M22 34a14 14 0 0 1 20 0M29 27a5 5 0 0 1 6 0' fill='none' stroke='%236ee7b7' stroke-width='5' stroke-linecap='round'/%3E%3Ccircle cx='32' cy='48' r='4' fill='%236ee7b7'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brandmark">⌁</span><span>NTRIP Load Console</span></div>
+    <div class="top-status"><span id="systemDot" class="dot idle"></span><span id="systemLabel">Idle</span><span class="divider"></span><span id="uptime">00:00:00</span></div>
+  </header>
+  <main>
+    <section class="hero">
+      <div><p class="eyebrow">CASTER TEST BENCH</p><h1>Push the stream.<br><span>Watch every connection.</span></h1></div>
+      <p class="hero-copy">Open controlled, simultaneous NTRIP clients from one credential and inspect throughput, health, and failures in real time.</p>
+    </section>
+    <section class="workspace">
+      <form id="configForm" class="panel config-panel">
+        <div class="panel-head"><div><p class="section-no">01</p><h2>Test configuration</h2></div><span id="limitBadge" class="badge">Up to 500</span></div>
+        <div class="field-grid triple">
+          <label>CASTER HOST<input name="host" placeholder="caster.example.com" required></label>
+          <label>PORT<input name="port" type="number" value="2101" min="1" max="65535" required></label>
+          <label>MOUNTPOINT<input name="mountpoint" placeholder="RTCM32" required></label>
+        </div>
+        <div class="field-grid double">
+          <label>USERNAME<input name="username" autocomplete="username" required></label>
+          <label>PASSWORD<input name="password" type="password" autocomplete="current-password"></label>
+        </div>
+        <div class="rule"></div>
+        <div class="field-grid triple">
+          <label>SIMULTANEOUS CLIENTS<input name="connections" type="number" value="100" min="1" max="500" required></label>
+          <label>LATITUDE<input name="latitude" type="number" step="any" value="52.3676" min="-90" max="90" required></label>
+          <label>LONGITUDE<input name="longitude" type="number" step="any" value="4.9041" min="-180" max="180" required></label>
+        </div>
+        <div class="options">
+          <label class="check"><input name="sendGga" type="checkbox" checked><span></span>Send NMEA GGA</label>
+          <label class="check"><input name="tls" type="checkbox"><span></span>TLS connection</label>
+          <label class="check"><input name="autoReconnect" type="checkbox" checked><span></span>Auto reconnect</label>
+          <label class="compact">GGA EVERY <input name="ggaInterval" type="number" value="10" min="1"> SEC</label>
+        </div>
+        <div id="message" class="message" role="alert"></div>
+        <div class="actions"><button id="startBtn" class="primary" type="submit">Start test <span>↗</span></button><button id="stopBtn" class="secondary" type="button" disabled>Stop</button></div>
+      </form>
+      <aside class="panel monitor-card">
+        <div class="panel-head"><div><p class="section-no">02</p><h2>Live monitor</h2></div><span class="live-pill"><i></i> LIVE</span></div>
+        <div class="score"><strong id="activeCount">0</strong><span>/<b id="requestedCount">0</b><small>streams active</small></span></div>
+        <div class="meter"><i id="activeMeter"></i></div>
+        <div class="stat-grid">
+          <div><span>THROUGHPUT</span><strong id="throughput">0 B/s</strong></div>
+          <div><span>DATA RECEIVED</span><strong id="dataReceived">0 B</strong></div>
+          <div><span>CONNECTING</span><strong id="connectingCount">0</strong></div>
+          <div><span>ERRORS</span><strong id="errorCount">0</strong></div>
+        </div>
+        <div class="chart-wrap"><div class="chart-label"><span>LAST 60 SECONDS</span><span id="chartPeak">0 B/s peak</span></div><svg id="chart" viewBox="0 0 600 130" preserveAspectRatio="none" aria-label="Throughput chart"><path class="chart-area" d=""></path><path class="chart-line" d=""></path></svg></div>
+      </aside>
+    </section>
+    <section class="panel streams-panel">
+      <div class="panel-head"><div><p class="section-no">03</p><h2>Connection detail</h2></div><div class="table-tools"><input id="streamSearch" placeholder="Filter by ID or status"><button id="downloadCsv" class="text-btn">Export CSV</button></div></div>
+      <div class="table-wrap"><table><thead><tr><th>CLIENT</th><th>STATUS</th><th>LATENCY</th><th>RATE</th><th>RECEIVED</th><th>RECONNECTS</th><th>LAST MESSAGE</th></tr></thead><tbody id="streamRows"><tr><td colspan="7" class="empty">Start a test to see individual stream activity.</td></tr></tbody></table></div>
+    </section>
+  </main>
+  <footer><span>NTRIP LOAD CONSOLE / v1.0</span><span>Run only against casters you are authorized to test.</span></footer>
+  <script type="module" src="/app.js"></script>
+</body></html>
