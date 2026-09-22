@@ -54,11 +54,18 @@ class LoadTest extends EventEmitter {
   publicStatus() {
     const streams = [...this.clients.values()].map(c => ({
       id: c.id, state: c.state, bytes: c.bytes, rate: c.rate, connectedAt: c.connectedAt,
-      latency: c.latency, error: c.error || '', reconnects: c.reconnects
+      latency: c.latency, error: c.error || '', reconnects: c.reconnects, account: c.account.label || c.account.username
     }));
+    const publicConfig = this.config ? {
+      host: this.config.host, port: this.config.port, mountpoint: this.config.mountpoint,
+      connections: this.config.connections, accountMode: this.config.accountMode,
+      latitude: this.config.latitude, longitude: this.config.longitude,
+      tls: this.config.tls, sendGga: this.config.sendGga, ggaInterval: this.config.ggaInterval,
+      autoReconnect: this.config.autoReconnect
+    } : null;
     return {
       running: this.running, startedAt: this.startedAt,
-      config: this.config ? { ...this.config, password: undefined, username: this.config.username ? '••••••' : '' } : null,
+      config: publicConfig,
       summary: {
         requested: this.config?.connections || 0,
         active: streams.filter(s => s.state === 'streaming').length,
@@ -97,7 +104,8 @@ class LoadTest extends EventEmitter {
     this.samples = [];
     this.lastBytes = 0;
     for (let i = 1; i <= config.connections; i++) {
-      const client = { id: i, state: 'queued', bytes: 0, lastBytes: 0, rate: 0, connectedAt: null, latency: null, error: '', reconnects: 0, socket: null, ggaTimer: null, retryTimer: null };
+      const account = config.accounts?.[i - 1] || { username: config.username, password: config.password, label: config.username };
+      const client = { id: i, account, state: 'queued', bytes: 0, lastBytes: 0, rate: 0, connectedAt: null, latency: null, error: '', reconnects: 0, socket: null, ggaTimer: null, retryTimer: null };
       this.clients.set(i, client);
       setTimeout(() => this.connect(client), Math.floor((i - 1) / START_RATE) * 1000 + ((i - 1) % START_RATE) * (1000 / START_RATE));
     }
@@ -122,7 +130,7 @@ class LoadTest extends EventEmitter {
     };
     socket.once(cfg.tls ? 'secureConnect' : 'connect', () => {
       client.latency = Date.now() - started;
-      const auth = Buffer.from(`${cfg.username}:${cfg.password}`).toString('base64');
+      const auth = Buffer.from(`${client.account.username}:${client.account.password}`).toString('base64');
       const request = [
         `GET /${encodeURI(cfg.mountpoint.replace(/^\/+/, ''))} HTTP/1.1`,
         `Host: ${cfg.host}:${cfg.port}`,
@@ -147,8 +155,10 @@ class LoadTest extends EventEmitter {
         const body = headerBuffer.subarray(headerEnd);
         client.bytes += body.length; this.totals.bytes += body.length;
         if (cfg.sendGga) {
-          socket.write(makeGga(cfg.latitude, cfg.longitude));
-          client.ggaTimer = setInterval(() => socket.writable && socket.write(makeGga(cfg.latitude, cfg.longitude)), cfg.ggaInterval * 1000);
+          const latitude = client.account.latitude ?? cfg.latitude;
+          const longitude = client.account.longitude ?? cfg.longitude;
+          socket.write(makeGga(latitude, longitude));
+          client.ggaTimer = setInterval(() => socket.writable && socket.write(makeGga(latitude, longitude)), cfg.ggaInterval * 1000);
         }
         return this.broadcast();
       }
@@ -186,10 +196,11 @@ function json(res, status, data) {
 function authorized(req) { return !ADMIN_TOKEN || req.headers.authorization === `Bearer ${ADMIN_TOKEN}`; }
 async function readJson(req) {
   let body = '';
-  for await (const chunk of req) { body += chunk; if (body.length > 65536) throw new Error('Request too large'); }
+  for await (const chunk of req) { body += chunk; if (body.length > 1048576) throw new Error('Request too large'); }
   return JSON.parse(body || '{}');
 }
 function validate(input) {
+  const rawAccounts = Array.isArray(input.accounts) ? input.accounts : [];
   const cfg = {
     host: String(input.host || '').trim(), port: Number(input.port || 2101), mountpoint: String(input.mountpoint || '').trim(),
     username: String(input.username || ''), password: String(input.password || ''), connections: Number(input.connections || 1),
@@ -197,7 +208,25 @@ function validate(input) {
     sendGga: input.sendGga !== false, ggaInterval: Number(input.ggaInterval || 10), connectTimeout: Number(input.connectTimeout || 10),
     autoReconnect: input.autoReconnect !== false, reconnectDelay: Number(input.reconnectDelay || 5)
   };
-  if (!cfg.host || !cfg.mountpoint || !cfg.username) throw new Error('Host, mountpoint, and username are required');
+  if (!cfg.host || !cfg.mountpoint) throw new Error('Host and mountpoint are required');
+  if (rawAccounts.length) {
+    cfg.accounts = rawAccounts.map((row, index) => {
+      const account = {
+        label: String(row.label || '').trim(), username: String(row.username || '').trim(), password: String(row.password ?? ''),
+        latitude: row.latitude === '' || row.latitude == null ? null : Number(row.latitude),
+        longitude: row.longitude === '' || row.longitude == null ? null : Number(row.longitude)
+      };
+      if (!account.username) throw new Error(`CSV row ${index + 2}: username is required`);
+      if (account.latitude != null && (!Number.isFinite(account.latitude) || account.latitude < -90 || account.latitude > 90)) throw new Error(`CSV row ${index + 2}: invalid latitude`);
+      if (account.longitude != null && (!Number.isFinite(account.longitude) || account.longitude < -180 || account.longitude > 180)) throw new Error(`CSV row ${index + 2}: invalid longitude`);
+      return account;
+    });
+    cfg.connections = cfg.accounts.length;
+    cfg.accountMode = 'csv';
+  } else {
+    if (!cfg.username) throw new Error('Username is required');
+    cfg.accountMode = 'single';
+  }
   if (!Number.isInteger(cfg.port) || cfg.port < 1 || cfg.port > 65535) throw new Error('Port must be between 1 and 65535');
   if (!Number.isInteger(cfg.connections) || cfg.connections < 1 || cfg.connections > MAX_CONNECTIONS) throw new Error(`Connections must be between 1 and ${MAX_CONNECTIONS}`);
   if (!Number.isFinite(cfg.latitude) || cfg.latitude < -90 || cfg.latitude > 90) throw new Error('Latitude must be between -90 and 90');

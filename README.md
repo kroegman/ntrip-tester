@@ -13,7 +13,20 @@ Use it only against NTRIP casters you own or have explicit permission to load-te
 - Live active, connecting, error, throughput, byte, latency, and reconnect metrics
 - Searchable connection table and CSV export
 - Credentials are kept only in server memory and are never returned by the API
+- Single-account mode or CSV account mode with one independent credential per client
 - No database and no runtime npm dependencies
+
+## CSV account mode
+
+Choose **CSV accounts** in the dashboard and load a CSV with these headers:
+
+```csv
+label,username,password,latitude,longitude
+Rover 01,user01,secret01,52.3676,4.9041
+Rover 02,user02,secret02,,
+```
+
+`username` and `password` are required columns. `label`, `latitude`, and `longitude` are optional. Each row creates one NTRIP client. When row coordinates are blank, the dashboard's global coordinates are used. CSV contents are sent only to the running service, held in memory for the test, and never returned by the status API.
 
 ## Run locally
 

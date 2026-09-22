@@ -1,0 +1,38 @@
+.mode-switch {
+  display: inline-flex;
+  padding: 4px;
+  margin: 0 0 18px;
+  border: 1px solid #293143;
+  border-radius: 8px;
+  background: #090e17;
+}
+
+.mode-switch label { cursor: pointer; }
+.mode-switch input { position: absolute; opacity: 0; width: 1px; }
+.mode-switch span {
+  display: block;
+  padding: 9px 14px;
+  border-radius: 5px;
+  color: #7f899d;
+  font: 700 12px/1 ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: 0;
+}
+.mode-switch input:checked + span { background: #263244; color: #e9edf7; }
+.credential-block[hidden], #connectionField[hidden] { display: none !important; }
+.csv-box {
+  margin-bottom: 14px;
+  padding: 16px;
+  border: 1px dashed #3a465a;
+  border-radius: 8px;
+  background: #090e1799;
+}
+.csv-box input[type="file"] { cursor: pointer; }
+.csv-meta { display: flex; justify-content: space-between; align-items: center; margin-top: 11px; color: #aeb6c6; font-size: 13px; }
+.csv-box p { margin: 12px 0 0; color: #687389; font-size: 12px; line-height: 1.5; }
+.csv-box code { color: #9eabc2; }
+
+@media (max-width: 650px) {
+  .mode-switch { display: flex; }
+  .mode-switch label { flex: 1; text-align: center; }
+  .csv-meta { align-items: flex-start; gap: 10px; }
+}

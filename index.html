@@ -6,6 +6,7 @@
   <title>NTRIP Load Console</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b1020'/%3E%3Cpath d='M16 42a23 23 0 0 1 32 0M22 34a14 14 0 0 1 20 0M29 27a5 5 0 0 1 6 0' fill='none' stroke='%236ee7b7' stroke-width='5' stroke-linecap='round'/%3E%3Ccircle cx='32' cy='48' r='4' fill='%236ee7b7'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/csv.css">
 </head>
 <body>
   <header class="topbar">
@@ -15,7 +16,7 @@
   <main>
     <section class="hero">
       <div><p class="eyebrow">CASTER TEST BENCH</p><h1>Push the stream.<br><span>Watch every connection.</span></h1></div>
-      <p class="hero-copy">Open controlled, simultaneous NTRIP clients from one credential and inspect throughput, health, and failures in real time.</p>
+      <p class="hero-copy">Open controlled, simultaneous NTRIP clients from one account or a CSV account list, then inspect throughput, health, and failures in real time.</p>
     </section>
     <section class="workspace">
       <form id="configForm" class="panel config-panel">
@@ -25,13 +26,22 @@
           <label>PORT<input name="port" type="number" value="2101" min="1" max="65535" required></label>
           <label>MOUNTPOINT<input name="mountpoint" placeholder="RTCM32" required></label>
         </div>
-        <div class="field-grid double">
+        <div class="mode-switch" role="group" aria-label="Credential source">
+          <label><input type="radio" name="credentialMode" value="single" checked><span>Single account</span></label>
+          <label><input type="radio" name="credentialMode" value="csv"><span>CSV accounts</span></label>
+        </div>
+        <div id="singleCredentials" class="field-grid double credential-block">
           <label>USERNAME<input name="username" autocomplete="username" required></label>
           <label>PASSWORD<input name="password" type="password" autocomplete="current-password"></label>
         </div>
+        <div id="csvCredentials" class="csv-box credential-block" hidden>
+          <label>ACCOUNT CSV<input id="accountCsv" type="file" accept=".csv,text/csv"></label>
+          <div class="csv-meta"><span id="csvStatus">No file selected</span><button id="downloadTemplate" class="text-btn" type="button">Download template</button></div>
+          <p>Required: <code>username,password</code>. Optional: <code>label,latitude,longitude</code>. One row creates one client.</p>
+        </div>
         <div class="rule"></div>
         <div class="field-grid triple">
-          <label>SIMULTANEOUS CLIENTS<input name="connections" type="number" value="100" min="1" max="500" required></label>
+          <label id="connectionField">SIMULTANEOUS CLIENTS<input name="connections" type="number" value="100" min="1" max="500" required></label>
           <label>LATITUDE<input name="latitude" type="number" step="any" value="52.3676" min="-90" max="90" required></label>
           <label>LONGITUDE<input name="longitude" type="number" step="any" value="4.9041" min="-180" max="180" required></label>
         </div>
@@ -59,9 +69,9 @@
     </section>
     <section class="panel streams-panel">
       <div class="panel-head"><div><p class="section-no">03</p><h2>Connection detail</h2></div><div class="table-tools"><input id="streamSearch" placeholder="Filter by ID or status"><button id="downloadCsv" class="text-btn">Export CSV</button></div></div>
-      <div class="table-wrap"><table><thead><tr><th>CLIENT</th><th>STATUS</th><th>LATENCY</th><th>RATE</th><th>RECEIVED</th><th>RECONNECTS</th><th>LAST MESSAGE</th></tr></thead><tbody id="streamRows"><tr><td colspan="7" class="empty">Start a test to see individual stream activity.</td></tr></tbody></table></div>
+      <div class="table-wrap"><table><thead><tr><th>CLIENT</th><th>ACCOUNT</th><th>STATUS</th><th>LATENCY</th><th>RATE</th><th>RECEIVED</th><th>RECONNECTS</th><th>LAST MESSAGE</th></tr></thead><tbody id="streamRows"><tr><td colspan="8" class="empty">Start a test to see individual stream activity.</td></tr></tbody></table></div>
     </section>
   </main>
-  <footer><span>NTRIP LOAD CONSOLE / v1.0</span><span>Run only against casters you are authorized to test.</span></footer>
+  <footer><span>NTRIP LOAD CONSOLE / v1.1</span><span>Run only against casters you are authorized to test.</span></footer>
   <script type="module" src="/app.js"></script>
 </body></html>
