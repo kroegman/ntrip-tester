@@ -15,7 +15,7 @@ Use it only against NTRIP casters you own or have explicit permission to load-te
 - Credentials are kept only in server memory and are never returned by the API
 - Single-account mode or CSV account mode with one independent credential per client
 - Optional streaming RTCM3 frame parser with CRC-24Q validation and per-message counters
-- RTCM 1005/1006 base-station position decoding, ECEF-to-WGS84 conversion, live rover/base map, and baseline distance
+- RTCM 1005/1006 base-station position decoding, ECEF-to-WGS84 conversion, selected/all-stream map modes, and baseline distance
 - On-demand per-connection RTCM inspector, keeping 500+ connection monitoring payloads compact
 - Optional bounded random disconnect/reconnect churn for authorized stress tests
 - No database and no runtime npm dependencies
@@ -35,6 +35,8 @@ Rover 02,user02,secret02,,
 ## RTCM diagnostics
 
 Enable **RTCM diagnostics** before starting a test. The service incrementally validates RTCM3 frames, counts every message type, and decodes types 1005 and 1006 to obtain the base-station ECEF coordinates. Select a connection row or its rover marker to inspect that connection. Only the selected connection's complete message counters are fetched by the browser; the one-second overview remains compact for large tests.
+
+The map can show only the selected rover/base pair or every rover, deduplicated base station, and baseline simultaneously. The all-stream view uses Leaflet's canvas renderer to keep hundreds of markers and lines out of the DOM. Stopping a test clears all RTCM counters, inspector content, markers, and lines.
 
 The map uses Leaflet with OpenStreetMap tiles and therefore needs browser internet access. Frame parsing continues if tiles are unavailable. Parsing is off by default so a throughput-only load test does not pay the CRC and bit-decoding cost.
 

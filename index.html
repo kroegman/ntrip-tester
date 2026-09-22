@@ -85,7 +85,7 @@
       </aside>
     </section>
     <section class="panel diagnostics-panel">
-      <div class="panel-head"><div><p class="section-no">03</p><h2>RTCM spatial diagnostics</h2></div><div class="diag-selection"><span>SELECTED</span><strong id="selectedStream">No connection</strong></div></div>
+      <div class="panel-head"><div><p class="section-no">03</p><h2>RTCM spatial diagnostics</h2></div><div class="diagnostics-tools"><div class="map-mode-switch" role="group" aria-label="Map display mode"><button type="button" data-map-mode="selected" class="active">Selected</button><button type="button" data-map-mode="all">All streams</button></div><div class="diag-selection"><span>SELECTED</span><strong id="selectedStream">No connection</strong></div></div></div>
       <div class="diagnostics-grid">
         <div class="map-shell">
           <div id="map" aria-label="Base station and rover map"></div>
@@ -104,7 +104,7 @@
       <div class="table-wrap"><table><thead><tr><th>CLIENT</th><th>ACCOUNT</th><th>STATUS</th><th>LATENCY</th><th>RATE</th><th>RTCM</th><th>RECEIVED</th><th>RECONNECTS</th><th>CHURN</th><th>LAST MESSAGE</th></tr></thead><tbody id="streamRows"><tr><td colspan="10" class="empty">Start a test to see individual stream activity.</td></tr></tbody></table></div>
     </section>
   </main>
-  <footer><span>NTRIP LOAD CONSOLE / v1.2</span><span>Run only against casters you are authorized to test.</span></footer>
+  <footer><span>NTRIP LOAD CONSOLE / v1.2.1</span><span>Run only against casters you are authorized to test.</span></footer>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script type="module" src="/app.js"></script>
 </body></html>

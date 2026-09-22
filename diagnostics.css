@@ -6,6 +6,10 @@
 .advanced-settings[hidden] { display:none; }
 .diagnostics-panel { margin-top:18px; padding-bottom:26px; }
 .diag-selection { text-align:right; }
+.diagnostics-tools { display:flex; align-items:center; gap:18px; }
+.map-mode-switch { display:flex; padding:3px; border:1px solid #293143; border-radius:7px; background:#090e17; }
+.map-mode-switch button { padding:7px 10px; border:0; border-radius:5px; background:transparent; color:#727e94; font:700 11px ui-sans-serif,system-ui,sans-serif; cursor:pointer; }
+.map-mode-switch button.active { color:#e9edf7; background:#263244; }
 .diag-selection span,.inspector-head span,.distance-card span { display:block; color:#667187; font:700 10px/1.4 ui-monospace,SFMono-Regular,monospace; letter-spacing:.08em; }
 .diag-selection strong { display:block; margin-top:4px; color:#cbd3e2; font-size:14px; }
 .diagnostics-grid { display:grid; grid-template-columns:minmax(0,1.5fr) minmax(290px,.65fr); gap:16px; }
@@ -35,4 +39,4 @@
 .rover-marker,.base-marker { width:18px!important; height:18px!important; margin:-9px 0 0 -9px!important; border:3px solid #07110f; border-radius:50%; background:#6ee7b7; box-shadow:0 0 0 2px #6ee7b788,0 3px 10px #0008; }
 .base-marker { background:#7aa2ff; box-shadow:0 0 0 2px #7aa2ff88,0 3px 10px #0008; }
 @media(max-width:950px){.diagnostics-grid{grid-template-columns:1fr}.message-inspector{min-height:320px}.feature-grid{grid-template-columns:1fr}}
-@media(max-width:650px){.map-shell{min-height:350px}.diagnostics-panel{padding:20px 16px}.station-details{grid-template-columns:1fr}.diag-selection{display:none}}
+@media(max-width:650px){.map-shell{min-height:350px}.diagnostics-panel{padding:20px 16px}.station-details{grid-template-columns:1fr}.diag-selection{display:none}.diagnostics-tools{gap:0}.map-mode-switch button{padding:7px 8px}}

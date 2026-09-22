@@ -4,6 +4,8 @@ let latest = null;
 let csvAccounts = [];
 let selectedStreamId = null;
 let map = null, roverMarker = null, baseMarker = null, baselineLine = null, lastMapSignature = '';
+let mapMode = 'selected', canvasRenderer = null, allFitSignature = '';
+const allRoverMarkers = new Map(), allBaseMarkers = new Map(), allBaselineLines = new Map();
 
 const messageNames = {
   1005: 'Base ARP', 1006: 'Base ARP + height', 1007: 'Antenna descriptor', 1008: 'Antenna + serial',
@@ -74,6 +76,7 @@ function updateCredentialMode() {
 function initMap() {
   if (!window.L) { $('#mapEmpty').textContent = 'Map library could not be loaded. RTCM message inspection still works.'; return; }
   map = L.map('map', { zoomControl: true }).setView([52.3676, 4.9041], 10);
+  canvasRenderer = L.canvas({ padding: 0.5 });
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
 }
 
@@ -86,12 +89,90 @@ function distanceMeters(a, b) {
 
 function formatDistance(value) { return value == null ? '—' : value >= 1000 ? `${(value / 1000).toFixed(2)} km` : `${value.toFixed(1)} m`; }
 
+function removeLayer(layer) { if (map && layer) map.removeLayer(layer); }
+
+function clearSelectedLayers() {
+  removeLayer(roverMarker); removeLayer(baseMarker); removeLayer(baselineLine);
+  roverMarker = null; baseMarker = null; baselineLine = null; lastMapSignature = '';
+}
+
+function clearAllLayers() {
+  for (const layer of allRoverMarkers.values()) removeLayer(layer);
+  for (const layer of allBaseMarkers.values()) removeLayer(layer);
+  for (const layer of allBaselineLines.values()) removeLayer(layer);
+  allRoverMarkers.clear(); allBaseMarkers.clear(); allBaselineLines.clear(); allFitSignature = '';
+}
+
+function resetRtcmUi() {
+  selectedStreamId = null;
+  clearSelectedLayers(); clearAllLayers();
+  $('#selectedStream').textContent = 'No connection';
+  $('#baselineDistance').textContent = '—';
+  $('#messageSummary').textContent = 'No stream selected';
+  $('#crcSummary').textContent = '0 CRC errors';
+  $('#stationDetails').innerHTML = '<span>Waiting for RTCM 1005 or 1006.</span>';
+  $('#messageTypes').innerHTML = '<p>Select a rover marker or a row in the connection table to inspect its RTCM messages.</p>';
+  $('#mapEmpty').hidden = false;
+  $('#mapEmpty').textContent = 'Enable RTCM diagnostics and select a connection.';
+  if (map) map.setView([52.3676, 4.9041], 10);
+}
+
+function updateAllMap(streams) {
+  clearSelectedLayers();
+  if (!map) return;
+  const liveIds = new Set();
+  const baseGroups = new Map();
+  const bounds = [];
+  for (const stream of streams) {
+    if (!stream.rover) continue;
+    liveIds.add(stream.id);
+    const rover = [stream.rover.latitude, stream.rover.longitude]; bounds.push(rover);
+    let marker = allRoverMarkers.get(stream.id);
+    if (!marker) {
+      marker = L.circleMarker(rover, { renderer: canvasRenderer, radius: 4, color: '#07110f', weight: 1.5, fillColor: '#6ee7b7', fillOpacity: 0.9 }).addTo(map);
+      marker.on('click', () => selectStream(stream.id));
+      allRoverMarkers.set(stream.id, marker);
+    } else marker.setLatLng(rover);
+    marker.setRadius(stream.id === selectedStreamId ? 7 : 4);
+    marker.setStyle({ fillColor: stream.id === selectedStreamId ? '#ffffff' : '#6ee7b7' });
+    marker.bindTooltip(`Rover #${stream.id}`);
+    if (stream.baseStation) {
+      const base = stream.baseStation;
+      const baseLatLng = [base.latitude, base.longitude]; bounds.push(baseLatLng);
+      const baseKey = `${base.stationId}:${base.latitude.toFixed(7)}:${base.longitude.toFixed(7)}`;
+      const group = baseGroups.get(baseKey) || { base, count: 0 };
+      group.count++; baseGroups.set(baseKey, group);
+      let line = allBaselineLines.get(stream.id);
+      if (!line) { line = L.polyline([rover, baseLatLng], { renderer: canvasRenderer, color: '#6ee7b7', weight: 1, opacity: 0.28 }).addTo(map); allBaselineLines.set(stream.id, line); }
+      else line.setLatLngs([rover, baseLatLng]);
+    } else {
+      const line = allBaselineLines.get(stream.id); if (line) { removeLayer(line); allBaselineLines.delete(stream.id); }
+    }
+  }
+  for (const [id, marker] of allRoverMarkers) if (!liveIds.has(id)) { removeLayer(marker); allRoverMarkers.delete(id); }
+  for (const [id, line] of allBaselineLines) if (!liveIds.has(id)) { removeLayer(line); allBaselineLines.delete(id); }
+  for (const [key, group] of baseGroups) {
+    const latLng = [group.base.latitude, group.base.longitude];
+    let marker = allBaseMarkers.get(key);
+    if (!marker) { marker = L.circleMarker(latLng, { renderer: canvasRenderer, radius: 6, color: '#07110f', weight: 1.5, fillColor: '#7aa2ff', fillOpacity: 0.95 }).addTo(map); allBaseMarkers.set(key, marker); }
+    else marker.setLatLng(latLng);
+    marker.bindTooltip(`Base ${group.base.stationId} · ${group.count} stream${group.count === 1 ? '' : 's'}`);
+  }
+  for (const [key, marker] of allBaseMarkers) if (!baseGroups.has(key)) { removeLayer(marker); allBaseMarkers.delete(key); }
+  $('#baselineDistance').textContent = `${liveIds.size} rovers · ${baseGroups.size} bases`;
+  const extent = bounds.reduce((value, point) => [Math.min(value[0], point[0]), Math.min(value[1], point[1]), Math.max(value[2], point[0]), Math.max(value[3], point[1])], [90, 180, -90, -180]);
+  const signature = `${liveIds.size}:${baseGroups.size}:${extent.map(value => value.toFixed(4)).join(':')}`;
+  if (bounds.length && signature !== allFitSignature) { map.fitBounds(bounds, { padding: [45, 45], maxZoom: 16 }); allFitSignature = signature; }
+}
+
 function updateMap(stream) {
   if (!stream) { $('#mapEmpty').hidden = false; $('#mapEmpty').textContent = 'Enable RTCM diagnostics and select a connection.'; $('#baselineDistance').textContent = '—'; return; }
   const enabled = Boolean(latest?.config?.parseRtcm);
   $('#mapEmpty').hidden = enabled;
   if (!enabled) { $('#mapEmpty').textContent = 'RTCM diagnostics are disabled for this test.'; return; }
   if (!map) { $('#mapEmpty').hidden = false; $('#mapEmpty').textContent = 'Map tiles could not be loaded. RTCM message inspection still works.'; return; }
+  if (mapMode === 'all') { updateAllMap(latest?.streams || []); return; }
+  clearAllLayers();
   if (!stream.rover) return;
   const rover = [stream.rover.latitude, stream.rover.longitude];
   const roverIcon = L.divIcon({ className: 'rover-marker', iconSize: [18, 18] });
@@ -141,6 +222,7 @@ async function refreshRtcmDetails() {
 }
 
 function render(status) {
+  const wasRunning = Boolean(latest?.running);
   latest = status;
   const summary = status.summary;
   $('#activeCount').textContent = summary.active;
@@ -158,6 +240,7 @@ function render(status) {
   [...form.elements].filter(element => element.name || element.id === 'accountCsv').forEach(element => element.disabled = status.running);
   drawChart(status.samples || []);
   renderRows(status.streams || []);
+  if (wasRunning && !status.running) { resetRtcmUi(); return; }
   if (!selectedStreamId && status.config?.parseRtcm && status.streams.length) selectedStreamId = status.streams[0].id;
   const selected = status.streams.find(stream => stream.id === selectedStreamId);
   if (selected) $('#selectedStream').textContent = `#${String(selected.id).padStart(3, '0')} · ${selected.account}`;
@@ -243,6 +326,12 @@ form.addEventListener('submit', async event => {
 $('#stopBtn').addEventListener('click', () => api('/api/test/stop', { method: 'POST' }).catch(error => $('#message').textContent = error.message));
 $('#streamSearch').addEventListener('input', () => latest && renderRows(latest.streams));
 $('#streamRows').addEventListener('click', event => { const row = event.target.closest('tr[data-id]'); if (row) selectStream(row.dataset.id); });
+document.querySelectorAll('[data-map-mode]').forEach(button => button.addEventListener('click', () => {
+  mapMode = button.dataset.mapMode;
+  document.querySelectorAll('[data-map-mode]').forEach(item => item.classList.toggle('active', item === button));
+  const selected = latest?.streams.find(stream => stream.id === selectedStreamId);
+  updateMap(selected || latest?.streams[0]);
+}));
 $('#downloadCsv').addEventListener('click', () => {
   if (!latest) return;
   const rows = [['client', 'account', 'status', 'latency_ms', 'rate_bytes_s', 'rtcm_frames', 'rtcm_types', 'received_bytes', 'reconnects', 'churn_events', 'message'], ...latest.streams.map(stream => [stream.id, stream.account, stream.state, stream.latency ?? '', stream.rate, stream.rtcmFrames, stream.rtcmTypes, stream.bytes, stream.reconnects, stream.churnEvents, stream.error])];
